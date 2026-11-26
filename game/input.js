@@ -1,76 +1,66 @@
-// input.js — Keyboard (panah/WASD, P, R, M) + mouse (klik menu).
-(function (global) {
-  'use strict';
+// input.js — keyboard + mouse state for menus and flight controls.
 
-  function Input(canvas) {
-    this.keys = {};
-    this.mouseX = 0;
-    this.mouseY = 0;
-    this.clicks = []; // antrean klik {x, y} dalam koordinat canvas 1280x720
-    this.onFirstGesture = null;
-    this._gestured = false;
-    var self = this;
+export function createInput() {
+  const keys = {};
+  const pressed = {}; // edge-triggered, consumed by the game loop
+  const mouse = { x: 0, y: 0, clicked: false, clickX: 0, clickY: 0 };
 
-    function markGesture() {
-      if (!self._gestured) {
-        self._gestured = true;
-        if (typeof self.onFirstGesture === 'function') self.onFirstGesture();
-      }
+  const KEYMAP = {
+    ArrowUp: 'pitchUp', ArrowDown: 'pitchDown',
+    ArrowLeft: 'rollLeft', ArrowRight: 'rollRight',
+    KeyW: 'throttleUp', KeyS: 'throttleDown',
+    KeyC: 'camera', KeyP: 'pause', KeyR: 'restart', KeyM: 'mute',
+    Escape: 'pause', Enter: 'confirm',
+  };
+
+  function onKeyDown(e) {
+    const action = KEYMAP[e.code];
+    if (action) {
+      if (!keys[action]) pressed[action] = true;
+      keys[action] = true;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     }
-
-    global.addEventListener('keydown', function (e) {
-      markGesture();
-      self.keys[e.code] = true;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].indexOf(e.code) >= 0) {
-        e.preventDefault();
-      }
-    });
-    global.addEventListener('keyup', function (e) {
-      self.keys[e.code] = false;
-    });
-    global.addEventListener('blur', function () { self.keys = {}; });
-
-    canvas.addEventListener('mousemove', function (e) {
-      var r = canvas.getBoundingClientRect();
-      self.mouseX = (e.clientX - r.left) * (1280 / r.width);
-      self.mouseY = (e.clientY - r.top) * (720 / r.height);
-    });
-    canvas.addEventListener('click', function (e) {
-      markGesture();
-      var r = canvas.getBoundingClientRect();
-      var x = (e.clientX - r.left) * (1280 / r.width);
-      var y = (e.clientY - r.top) * (720 / r.height);
-      self.clicks.push({ x: x, y: y });
-    });
   }
+  function onKeyUp(e) {
+    const action = KEYMAP[e.code];
+    if (action) keys[action] = false;
+  }
+  function onMouseMove(e) { mouse.x = e.clientX; mouse.y = e.clientY; }
+  function onMouseDown(e) {
+    mouse.clicked = true; mouse.clickX = e.clientX; mouse.clickY = e.clientY;
+  }
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mousedown', onMouseDown);
 
-  Input.prototype.isDown = function (code) { return !!this.keys[code]; };
-
-  // Tekan sekali (edge): dipakai untuk P / R / M.
-  Input.prototype.pressedOnce = function (code) {
-    if (this.keys[code]) { this.keys[code] = false; return true; }
-    return false;
+  return {
+    // Held keys.
+    get pitchUp() { return !!keys.pitchUp; },
+    get pitchDown() { return !!keys.pitchDown; },
+    get rollLeft() { return !!keys.rollLeft; },
+    get rollRight() { return !!keys.rollRight; },
+    get throttleUp() { return !!keys.throttleUp; },
+    get throttleDown() { return !!keys.throttleDown; },
+    // Edge-triggered: true once after the key goes down.
+    consume(action) {
+      if (pressed[action]) { pressed[action] = false; return true; }
+      return false;
+    },
+    consumeClick() {
+      if (mouse.clicked) {
+        mouse.clicked = false;
+        return { x: mouse.clickX, y: mouse.clickY };
+      }
+      return null;
+    },
+    // Flight stick values from held keys: pitch -1..1 (up positive), roll -1..1.
+    stick() {
+      return {
+        pitch: (this.pitchUp ? 1 : 0) - (this.pitchDown ? 1 : 0),
+        roll: (this.rollLeft ? 1 : 0) - (this.rollRight ? 1 : 0),
+        throttleDelta: (this.throttleUp ? 0.55 : 0) - (this.throttleDown ? 0.55 : 0),
+      };
+    },
   };
-
-  Input.prototype.pitchUp = function () {
-    return this.isDown('ArrowUp') || this.isDown('KeyW');
-  };
-  Input.prototype.pitchDown = function () {
-    return this.isDown('ArrowDown') || this.isDown('KeyS');
-  };
-  Input.prototype.throttleUp = function () {
-    return this.isDown('ArrowRight') || this.isDown('KeyD');
-  };
-  Input.prototype.throttleDown = function () {
-    return this.isDown('ArrowLeft') || this.isDown('KeyA');
-  };
-
-  // Ambil klik berikutnya (atau null). Dipanggil tiap frame oleh game.
-  Input.prototype.nextClick = function () {
-    return this.clicks.length ? this.clicks.shift() : null;
-  };
-
-  Input.prototype.clearClicks = function () { this.clicks.length = 0; };
-
-  global.Input = Input;
-})(typeof window !== 'undefined' ? window : globalThis);
+}

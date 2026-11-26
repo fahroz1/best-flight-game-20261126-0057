@@ -3,44 +3,123 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Langit Nusantara — Game Terbang</title>
-<link rel="icon" href="data:,">
+<title>Langit Nusantara 3D — Flight Game</title>
 <style>
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: #0b1622; overflow: hidden;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  }
-  #stage {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-  }
-  canvas {
-    display: block;
-    width: min(100vw, calc(100vh * 16 / 9));
-    height: min(100vh, calc(100vw * 9 / 16));
-    background: #0b1622;
-    cursor: default;
-  }
-  #fallback {
-    color: #dfe9f2; text-align: center; padding: 24px; display: none;
-    max-width: 560px; font-size: 16px; line-height: 1.5;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel { background: rgba(8, 20, 34, 0.72); border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 10px; backdrop-filter: blur(2px); }
+  /* ---- HUD ---- */
+  #hud { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .hud-box { position: absolute; padding: 10px 14px; font-size: 15px; line-height: 1.5; }
+  .hud-box b { color: #ffe14d; font-size: 19px; }
+  .hud-box .lbl { color: #9fc6e8; font-size: 11px; letter-spacing: 1px; }
+  #hud-tl { top: 12px; left: 12px; }
+  #hud-tr { top: 12px; right: 12px; text-align: right; }
+  #hud-bl { bottom: 12px; left: 12px; width: 220px; }
+  #hud-br { position: absolute; bottom: 12px; right: 12px; padding: 8px; }
+  #hud-att { display: block; border-radius: 50%; background: rgba(8, 20, 34, 0.6); }
+  .bar { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.18); overflow: hidden; margin: 2px 0 8px; }
+  .bar > div { height: 100%; border-radius: 5px; }
+  #hud-fuelbar { background: #37d67a; width: 100%; }
+  #hud-dmgbar { background: #ff5040; width: 0%; }
+  #hud-compass { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: 260px; height: 26px; overflow: hidden; text-align: center;
+    font-size: 13px; letter-spacing: 2px; color: #cfe6ff; padding: 3px 0; }
+  #hud-compass span { position: absolute; transform: translateX(-50%); }
+  #hud-msg { position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    font-size: 26px; font-weight: 700; color: #ffe14d; text-shadow: 0 2px 8px #000;
+    opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+  #hud-help { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: rgba(255, 255, 255, 0.75); text-shadow: 0 1px 4px #000; }
+  /* ---- overlays ---- */
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(4, 12, 22, 0.55); }
+  .card { width: min(680px, 92vw); max-height: 92vh; overflow-y: auto; padding: 26px 30px;
+    background: rgba(8, 22, 38, 0.92); border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 14px;
+    text-align: center; }
+  .card h1 { font-size: 38px; letter-spacing: 1px; color: #ffe14d; margin-bottom: 4px; }
+  .card h2 { font-size: 15px; font-weight: 400; color: #bfe0ff; margin-bottom: 18px; }
+  .card h3 { font-size: 14px; color: #9fc6e8; letter-spacing: 2px; margin: 16px 0 8px; text-align: left; }
+  .picks { display: flex; gap: 10px; }
+  .pick { flex: 1; padding: 12px 10px; border-radius: 10px; cursor: pointer; text-align: left;
+    background: rgba(255, 255, 255, 0.07); border: 2px solid rgba(255, 255, 255, 0.18); color: #fff;
+    font-family: inherit; }
+  .pick:hover { border-color: #ffe14d; }
+  .pick.sel { border-color: #ffe14d; background: rgba(255, 225, 77, 0.16); }
+  .pick b { display: block; font-size: 16px; margin-bottom: 4px; }
+  .pick span { display: block; font-size: 12px; color: #cfe6ff; line-height: 1.45; }
+  .bigbtn { margin-top: 20px; padding: 13px 42px; font-size: 19px; font-weight: 700; cursor: pointer;
+    color: #12233a; background: #ffe14d; border: none; border-radius: 10px; font-family: inherit; }
+  .bigbtn:hover { background: #ffea7a; }
+  .keys { font-size: 13px; color: #cfe6ff; line-height: 1.8; text-align: left; margin-top: 6px; }
+  .keys b { color: #ffe14d; }
+  #highscore { margin-top: 12px; font-size: 14px; color: #ffe14d; }
+  #end-title { font-size: 34px; color: #ffe14d; margin-bottom: 10px; }
+  #end-detail { font-size: 16px; line-height: 1.6; color: #e8f3ff; }
 </style>
 </head>
 <body>
-<div id="stage">
-  <canvas id="game" width="1280" height="720"></canvas>
-  <div id="fallback">Browser Anda tidak mendukung canvas. Silakan pakai browser modern untuk memainkan Langit Nusantara.</div>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div id="hud-tl" class="panel hud-box">
+    <div><span class="lbl">ALTITUDE</span><br><b id="hud-alt">0 ft</b></div>
+    <div><span class="lbl">SPEED</span><br><b id="hud-spd">0 kt</b></div>
+    <div><span class="lbl">HEADING</span><br><b id="hud-hdg">000°</b></div>
+  </div>
+  <div id="hud-tr" class="panel hud-box">
+    <div><span class="lbl">SKOR</span><br><b id="hud-score">0</b></div>
+    <div><span class="lbl">RING</span><br><b id="hud-rings">9 / 9</b></div>
+  </div>
+  <div id="hud-bl" class="panel hud-box">
+    <div><span class="lbl">FUEL</span> <b id="hud-fuel">100%</b></div>
+    <div class="bar"><div id="hud-fuelbar"></div></div>
+    <div><span class="lbl">DAMAGE</span> <b id="hud-dmg">0%</b></div>
+    <div class="bar"><div id="hud-dmgbar"></div></div>
+  </div>
+  <div id="hud-br" class="panel"><canvas id="hud-att" width="140" height="140"></canvas></div>
+  <div id="hud-compass" class="panel"></div>
+  <div id="hud-msg"></div>
+  <div id="hud-help">W/S throttle · Panah pitch/roll · C kamera · P pause · R restart · M mute</div>
 </div>
-<script src="physics.js"></script>
-<script src="terrain.js"></script>
-<script src="plane.js"></script>
-<script src="levels.js"></script>
-<script src="audio.js"></script>
-<script src="input.js"></script>
-<script src="hud.js"></script>
-<script src="game.js"></script>
-<script src="main.js"></script>
+
+<div id="menu" class="overlay">
+  <div class="card">
+    <h1>LANGIT NUSANTARA 3D</h1>
+    <h2>Terbang di atas kepulauan — lewati cincin bercahaya, jaga bahan bakar, dan mendarat dengan mulus di runway.</h2>
+    <h3>PILIH PESAWAT</h3>
+    <div class="picks" id="plane-pick"></div>
+    <h3>PILIH LEVEL</h3>
+    <div class="picks" id="level-pick"></div>
+    <button id="start-btn" class="bigbtn">TERBANG ✈</button>
+    <div class="keys">
+      <b>W / S</b> — throttle &nbsp;·&nbsp; <b>↑ / ↓</b> — pitch (naik/turun) &nbsp;·&nbsp; <b>← / →</b> — roll (belok)<br>
+      <b>C</b> — ganti kamera (chase / cockpit) &nbsp;·&nbsp; <b>P</b> — pause &nbsp;·&nbsp; <b>R</b> — restart &nbsp;·&nbsp; <b>M</b> — mute<br>
+      Misi: lewati semua ring secara berurutan, lalu mendarat di runway. Jangan sampai bahan bakar habis atau menabrak gunung!
+    </div>
+    <div id="highscore"></div>
+  </div>
+</div>
+
+<div id="pause" class="overlay">
+  <div class="card">
+    <h1 style="font-size:30px">PAUSE</h1>
+    <p style="color:#cfe6ff">Istirahat sejenak — angin menunggu.</p>
+    <button id="resume-btn" class="bigbtn">LANJUT TERBANG</button>
+  </div>
+</div>
+
+<div id="end" class="overlay">
+  <div class="card">
+    <div id="end-title">MISI SELESAI!</div>
+    <div id="end-detail"></div>
+    <button id="restart-btn" class="bigbtn">TERBANG LAGI (R)</button>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
 </body>
 </html>

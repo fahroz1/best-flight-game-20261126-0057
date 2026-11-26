@@ -1,90 +1,97 @@
-// main.ts — Program penyerahan Langit Nusantara (make.fun).
-// Menyalin game/ dan screenshots/ dari samping file ini ke direktori output,
-// lalu menulis dossier.json lewat buildDossier dari vendor/makefun-game.ts.
-// Node 22, standard library saja. Deterministik, tanpa menghapus /output.
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+// main.ts — hand-in program for the "Make the best flight game" entry (Node 22, stdlib only).
+// Copies game/ and screenshots/ from this repository into the output directory
+// (MAKEFUN_OUTPUT_DIR, or /output) and writes dossier.json with buildDossier
+// from vendor/makefun-game.ts. Deterministic: two runs write identical bytes.
+
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = dirname(fileURLToPath(import.meta.url));
+const OUTPUT_DIR = resolve(process.env.MAKEFUN_OUTPUT_DIR || '/output');
 
-function resolveOutputDir(): string {
-  const raw = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-  return resolve(raw);
+const CAPS = {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
+  game_path_max_bytes: 1000,
+};
+
+function copyTree(name) {
+  const src = join(REPO_ROOT, name);
+  const dst = join(OUTPUT_DIR, name);
+  if (!existsSync(src) || !statSync(src).isDirectory()) {
+    throw new Error(`main.ts: ${name}/ is missing from the repository`);
+  }
+  mkdirSync(dst, { recursive: true });
+  // Sorted copy so the directory listing order is stable across runs.
+  const entries = readdirSync(src, { withFileTypes: true }).sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  for (const e of entries) {
+    const from = join(src, e.name);
+    const to = join(dst, e.name);
+    if (e.isDirectory()) {
+      cpSync(from, to, { recursive: true, dereference: false });
+    } else if (e.isFile()) {
+      cpSync(from, to, { dereference: false });
+    }
+    // Symlinks and other special entries are skipped: the gate wants plain files.
+  }
 }
 
-// Salin direktori secara rekursif dengan urutan entri terurut (deterministik).
-function copyTreeSorted(src: string, dest: string): void {
-  mkdirSync(dest, { recursive: true });
-  const entries = readdirSync(src).sort();
-  for (const name of entries) {
-    const from = join(src, name);
-    const to = join(dest, name);
-    if (statSync(from).isDirectory()) {
-      copyTreeSorted(from, to);
-    } else {
-      cpSync(from, to);
+function countFiles(dir) {
+  let files = 0, bytes = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) {
+      const sub = countFiles(p);
+      files += sub.files; bytes += sub.bytes;
+    } else if (e.isFile()) {
+      files += 1; bytes += statSync(p).size;
     }
   }
+  return { files, bytes };
 }
 
-// Samakan atime/mtime semua file hasil salinan ke epoch tetap (determinisme).
-const FIXED_EPOCH = new Date(0);
-function normalizeMtimes(dir: string): void {
-  for (const name of readdirSync(dir).sort()) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) normalizeMtimes(p);
-    else utimesSync(p, FIXED_EPOCH, FIXED_EPOCH);
+function validate() {
+  // Fail loudly instead of handing in a broken entry.
+  const indexHtml = join(OUTPUT_DIR, 'game', 'index.html');
+  if (!existsSync(indexHtml)) throw new Error('main.ts: game/index.html missing from output');
+  if (statSync(indexHtml).size > 1024 * 1024) throw new Error('main.ts: game/index.html over 1 MiB');
+  const shots = readdirSync(join(OUTPUT_DIR, 'screenshots'))
+    .filter((n) => !n.startsWith('.'))
+    .sort();
+  if (shots.length < 3 || shots.length > 4) {
+    throw new Error(`main.ts: expected 3-4 screenshots, found ${shots.length}`);
   }
-}
-
-// Kosongkan ISI direktori output saja — direktorinya sendiri tidak pernah dihapus.
-function emptyOutputContents(outDir: string): void {
-  mkdirSync(outDir, { recursive: true });
-  for (const name of readdirSync(outDir).sort()) {
-    rmSync(join(outDir, name), { recursive: true, force: true });
+  for (const s of shots) {
+    const size = statSync(join(OUTPUT_DIR, 'screenshots', s)).size;
+    if (size > 262144) throw new Error(`main.ts: screenshot ${s} over 256 KiB (${size} bytes)`);
+    if (!/\.(png|jpe?g)$/i.test(s)) throw new Error(`main.ts: screenshot ${s} is not a PNG or JPEG`);
   }
-}
-
-async function main(): Promise<void> {
-  const outDir = resolveOutputDir();
-  const gameSrc = join(SCRIPT_DIR, 'game');
-  const shotsSrc = join(SCRIPT_DIR, 'screenshots');
-  if (!existsSync(gameSrc)) throw new Error('game/ tidak ditemukan di samping main.ts: ' + gameSrc);
-  if (!existsSync(shotsSrc)) throw new Error('screenshots/ tidak ditemukan di samping main.ts: ' + shotsSrc);
-
-  emptyOutputContents(outDir);
-  copyTreeSorted(gameSrc, join(outDir, 'game'));
-  copyTreeSorted(shotsSrc, join(outDir, 'screenshots'));
-  normalizeMtimes(join(outDir, 'game'));
-  normalizeMtimes(join(outDir, 'screenshots'));
-
-  const dossier = await buildDossier(outDir, {
-    text_max_bytes: 163840,
-    screenshots: { max: 4, max_bytes: 262144 },
-    game_max_files: 993,
-    game_max_bytes: 50331648,
-    game_path_max_bytes: 1000,
-  });
-
-  // buildDossier mengembalikan isi dossier; tulis sebagai dossier.json.
-  // Bentuknya bisa berupa string, Uint8Array (byte JSON), atau objek biasa.
-  // Jika ia sudah menulis file sendiri (undefined), biarkan apa adanya.
-  if (dossier !== undefined && dossier !== null) {
-    const dossierPath = join(outDir, 'dossier.json');
-    if (typeof dossier === 'string') {
-      writeFileSync(dossierPath, dossier, 'utf8');
-    } else if (dossier instanceof Uint8Array) {
-      writeFileSync(dossierPath, dossier);
-    } else {
-      writeFileSync(dossierPath, JSON.stringify(dossier, null, 2) + '\n', 'utf8');
-    }
+  const game = countFiles(join(OUTPUT_DIR, 'game'));
+  if (game.bytes > 50331648) throw new Error(`main.ts: game/ over 48 MiB (${game.bytes} bytes)`);
+  const dossierSize = statSync(join(OUTPUT_DIR, 'dossier.json')).size;
+  if (dossierSize === 0 || dossierSize > 1572864) {
+    throw new Error(`main.ts: dossier.json has unexpected size ${dossierSize}`);
   }
-  console.log('OK: dossier ditulis ke ' + join(outDir, 'dossier.json'));
+  console.log(`main.ts: game/ ${game.files} files, ${game.bytes} bytes; screenshots ${shots.length}; dossier.json ${dossierSize} bytes`);
 }
 
-main().catch((err: unknown) => {
-  console.error('main.ts gagal:', err instanceof Error ? err.message : err);
-  process.exitCode = 1;
-});
+function main() {
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  // Empty any previous run's output so stale files can never leak into the entry.
+  for (const e of readdirSync(OUTPUT_DIR)) {
+    rmSync(join(OUTPUT_DIR, e), { recursive: true, force: true });
+  }
+  copyTree('game');
+  copyTree('screenshots');
+  const dossier = buildDossier(OUTPUT_DIR, CAPS);
+  writeFileSync(join(OUTPUT_DIR, 'dossier.json'), dossier);
+  validate();
+  console.log(`main.ts: wrote ${OUTPUT_DIR} (dossier.json ${dossier.length} bytes)`);
+}
+
+main();
