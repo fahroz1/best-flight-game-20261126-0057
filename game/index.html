@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Langit Nusantara — Game Terbang</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0b1622; overflow: hidden;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  #stage {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    background: #0b1622;
+    cursor: default;
+  }
+  #fallback {
+    color: #dfe9f2; text-align: center; padding: 24px; display: none;
+    max-width: 560px; font-size: 16px; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="fallback">Browser Anda tidak mendukung canvas. Silakan pakai browser modern untuk memainkan Langit Nusantara.</div>
+</div>
+<script src="physics.js"></script>
+<script src="terrain.js"></script>
+<script src="plane.js"></script>
+<script src="levels.js"></script>
+<script src="audio.js"></script>
+<script src="input.js"></script>
+<script src="hud.js"></script>
+<script src="game.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
